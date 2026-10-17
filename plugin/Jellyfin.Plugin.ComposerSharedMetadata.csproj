@@ -1,0 +1,25 @@
+<!--
+Jellyfin Composer Shared Metadata Native Plugin v1.1.0
+Target Jellyfin 12.2/.NET 10. Separate plugin-owned SQLite DB; NO access to jellyfin.db.
+Build (on SDK-equipped CI): dotnet publish -c Release -r linux-x64 -p:SelfContained=false
+Avoid packaging Jellyfin server runtime DLLs, include SQLite runtime dependencies.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Jellyfin.Plugin.ComposerSharedMetadata</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.ComposerSharedMetadata</RootNamespace>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors></WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="12.2.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="12.2.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.1" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>
