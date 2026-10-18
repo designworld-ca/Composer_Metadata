@@ -1,4 +1,4 @@
-# Composer Shared Metadata Plugin v1.1.0 — builds installable Jellyfin 12.2 archives.
+# Composer Shared Metadata Plugin v1.2.1 — builds installable Jellyfin 12.2 archives.
 # Runs on explicit workflow_dispatch, code push, or v* tag. No Jellyfin DB access.
 # Only build runner downloads .NET SDK and NuGet; no SDK needed on Jellyfin server.
 name: Build native Composer plugin
@@ -11,33 +11,33 @@ permissions:
   contents: write
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
       - name: Restore and build against Jellyfin 12.2
         run: dotnet build plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --configuration Release
       - name: Test SQLite store using separate temp DB
         run: dotnet run --project tests/StoreSmoke.csproj --configuration Release
+      - name: Verify logging coverage and privacy invariants
+        run: python3 -m unittest discover -s tests -p test_logging.py -v
       - name: Test the Composer Browser
         run: |
-          node --check web/jellyfin_composers_api_browser_v3_6_0.js
-          node tests/test_composer_api_v3_6_0.js
-      - name: Publish x64 and arm64 plugin libraries
+          node --check web/jellyfin_composers_api_browser_v3_7_0.js
+          node tests/test_composer_api_v3_7_0.js
+      - name: Publish Linux x64 plugin libraries
         run: |
           dotnet publish plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --configuration Release -r linux-x64 --self-contained false --output out/linux-x64
-          dotnet publish plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --configuration Release -r linux-arm64 --self-contained false --output out/linux-arm64
       - name: Assemble platform-specific install ZIPs
         run: |
           python3 packaging/package_release.py --publish-dir out/linux-x64 --rid linux-x64 --apply
-          python3 packaging/package_release.py --publish-dir out/linux-arm64 --rid linux-arm64 --apply
           (cd dist && sha256sum *.zip > SHA256SUMS.txt)
       - name: Upload built install ZIPs
         uses: actions/upload-artifact@v4
         with:
-          name: jellyfin-composer-plugin-1.1.0
+          name: jellyfin-composer-plugin-1.2.1
           path: dist/*
           if-no-files-found: error
       - name: Publish GitHub Release on version tag
