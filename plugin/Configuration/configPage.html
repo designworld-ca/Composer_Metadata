@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Composer Shared Metadata</title></head><body>
+<div id="composerSharedMetadataConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+ <div data-role="content"><h2>Composer Shared Metadata</h2>
+ <p>This plugin stores edited composer biographies and portraits in an independent SQLite database.
+ It does not alter Jellyfin's native People or music database.</p>
+ <p>Use the Composer Browser Music tab to edit records. Jellyfin's Dashboard &gt; Plugins &gt;
+ My Plugins manages enable/disable/uninstall. Dashboard &gt; Plugins &gt;
+ Repositories manages the catalog URL separately.</p>
+ <p>Plugin health API: <code>/ComposerSharedMetadata/health</code></p>
+ <p>Plugin activity appears in the standard Jellyfin logs with event prefix <code>CSM</code>. Normal log level reports plugin initialization, record-list requests, successful SQLite saves and revision conflicts. Enable Debug for <code>Jellyfin.Plugin.ComposerSharedMetadata</code> for additional diagnostics.</p>
+ <p><strong>Backups:</strong> back up the ComposerSharedMetadata folder under Jellyfin's plugin configurations path before upgrades or removal.</p>
+ </div>
+</div></body></html>
