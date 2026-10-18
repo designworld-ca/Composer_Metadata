@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Jellyfin Composer Shared Metadata packaging v1.1.0.
+"""Jellyfin Composer Shared Metadata packaging v1.2.1.
 
 PURPOSE: Make a manual-installable ZIP after a real, successful .NET 10 build.
 SAFETY: Default preview, explicit --apply required; never touches Jellyfin files.
 USAGE: python3 packaging/package_release.py --publish-dir out/linux-x64 --rid linux-x64 --apply
 INPUT: built DLL + SQLite managed/native dependencies from dotnet publish.
-OUTPUT: dist/jellyfin-composer-shared-metadata-1.1.0-linux-x64-install.zip
+OUTPUT: dist/jellyfin-composer-shared-metadata-1.2.1-linux-x64-install.zip
 REQUIREMENTS: Python 3.10+; publish must already have succeeded. Do not call this
 with source files instead of compiled binaries. Fails if required DLLs are missing.
 """
@@ -16,7 +16,7 @@ import pathlib
 import tempfile
 import zipfile
 
-VERSION = '1.1.0'
+VERSION = '1.2.1'
 PLUGIN_ID = '4c65902b-e89d-4549-a313-2a204c622e77'
 MAIN_DLL = 'Jellyfin.Plugin.ComposerSharedMetadata.dll'
 
@@ -47,24 +47,23 @@ def execute():
     names = [(f, f.name) for f in files]
     meta = {
         'name': 'Composer Shared Metadata', 'guid': PLUGIN_ID,
-        'version': '1.1.0.0', 'targetAbi': '12.2.0.0',
+        'version': '1.2.1.0', 'targetAbi': '12.2.0.0',
         'category': 'Metadata', 'description': 'Shared composer metadata SQLite overlays, no Jellyfin DB edits.',
-        'status': 'Active', 'autoUpdate': False,
+        'status': 'Active', 'autoUpdate': True,
         'assemblies': [MAIN_DLL], 'owner': 'Composer Browser Project'
     }
     out = pathlib.Path(args.output_dir) / ('jellyfin-composer-shared-metadata-' + VERSION + '-' + args.rid + '-install.zip')
     print('PREVIEW: target', out)
-    print('PREVIEW: plugin folder', f'ComposerSharedMetadata_{VERSION}')
+    print('PREVIEW: ZIP root contains DLL, SQLite dependencies and meta.json (no nested plugin folder)')
     print('PREVIEW: files', ', '.join(f.name for f, _ in names), 'meta.json')
     if not args.apply:
         print('DRY RUN: no archive created. Pass --apply to package compiled binaries.')
         return
     out.parent.mkdir(parents=True, exist_ok=True)
-    prefix = f'ComposerSharedMetadata_{VERSION}/'
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         for f, name in names:
-            z.write(f, prefix + name)
-        z.writestr(prefix + 'meta.json', json.dumps(meta, indent=2) + '\n')
+            z.write(f, name)
+        z.writestr('meta.json', json.dumps(meta, indent=2) + '\n')
     with zipfile.ZipFile(out) as z:
         if z.testzip() is not None: raise RuntimeError('Invalid ZIP CRC')
     print('CREATED:', out)
