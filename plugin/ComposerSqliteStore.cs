@@ -1,5 +1,5 @@
 /*
- * ComposerSqliteStore.cs — v1.1.0 (Jellyfin 12.2/.NET 10)
+ * ComposerSqliteStore.cs — v1.2.1 (Jellyfin 12.2/.NET 10)
  * Separate SQLite data at <PluginConfigurationsPath>/ComposerSharedMetadata/composer_metadata.sqlite3.
  * PREVIEW: ReadAll/ReadImage do not initialize/mutate a database. Health is read-only.
  * APPLY: SaveAsync only after authenticated administrator PUT, exact composer key + expectedRevision.
@@ -8,6 +8,7 @@
  */
 using System.Text;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.ComposerSharedMetadata;
 
@@ -43,9 +44,12 @@ public sealed class ComposerSqliteStore
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private readonly string _root;
     private readonly string _file;
+    private readonly ILogger<ComposerSqliteStore>? _logger;
 
-    public ComposerSqliteStore(string pluginConfigurationsPath)
+    // Optional logger keeps isolated smoke tests and read-only tooling compatible.
+    public ComposerSqliteStore(string pluginConfigurationsPath, ILogger<ComposerSqliteStore>? logger = null)
     {
+        _logger = logger;
         if (string.IsNullOrWhiteSpace(pluginConfigurationsPath)) throw new ArgumentException("Plugin configuration path missing.");
         _root = Path.Combine(pluginConfigurationsPath, "ComposerSharedMetadata");
         _file = Path.Combine(_root, "composer_metadata.sqlite3");
@@ -123,7 +127,11 @@ public sealed class ComposerSqliteStore
     public Dictionary<string, ComposerRecord> ReadAll()
     {
         var result = new Dictionary<string, ComposerRecord>(StringComparer.Ordinal);
-        if (!File.Exists(_file)) return result;
+        if (!File.Exists(_file))
+        {
+            _logger?.LogDebug("CSM111 Composer SQLite file not yet created; returning empty overlay list");
+            return result;
+        }
         using var conn = Connect(true);
         using var cmd = Select(conn);
         using var reader = cmd.ExecuteReader();
@@ -132,6 +140,7 @@ public sealed class ComposerSqliteStore
             var record = ToRecord(reader);
             result[record.Key] = record;
         }
+        _logger?.LogDebug("CSM112 Composer SQLite read completed; count {RecordCount}", result.Count);
         return result;
     }
 
@@ -188,14 +197,22 @@ public sealed class ComposerSqliteStore
         if (request.Overview is null || request.Overview.Length > 100_000) throw new ArgumentException("Biography exceeds 100,000 characters.");
         if (request.ExpectedRevision < 0) throw new ArgumentException("Invalid expectedRevision.");
         var image = ParseImage(request.ImageDataUrl);
+        var keyToken = ComposerLogToken.ForKey(key);
+        _logger?.LogDebug("CSM200 Validated save; record token {RecordToken}; expected revision {ExpectedRevision}; portrait supplied {HasPortrait}",
+            keyToken, request.ExpectedRevision, image is not null);
 
         await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // A rejected preview or validation error does NOT create the database.
+            var firstWrite = !File.Exists(_file);
             Directory.CreateDirectory(_root);
             using var conn = Connect(false);
             Initialize(conn);
+            if (firstWrite)
+            {
+                _logger?.LogInformation("CSM201 Initialized independent Composer SQLite database on first write");
+            }
             using var txn = conn.BeginTransaction();
             int oldRevision = 0;
             ComposerRecord? existing = null;
@@ -212,6 +229,8 @@ public sealed class ComposerSqliteStore
             if (oldRevision != request.ExpectedRevision)
             {
                 txn.Rollback();
+                _logger?.LogWarning("CSM209 SQLite revision conflict; record token {RecordToken}; expected {ExpectedRevision}; actual {ActualRevision}",
+                    keyToken, request.ExpectedRevision, oldRevision);
                 return new SaveResult { Conflict = true, Record = existing };
             }
             var stamp = DateTime.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
@@ -242,14 +261,24 @@ public sealed class ComposerSqliteStore
                 if (update.ExecuteNonQuery() != 1)
                 {
                     txn.Rollback();
+                    _logger?.LogWarning("CSM209 SQLite conditional update conflict; record token {RecordToken}", keyToken);
                     return new SaveResult { Conflict = true, Record = existing };
                 }
             }
             txn.Commit();
             using var select = Select(conn, key);
             using var resultReader = select.ExecuteReader();
-            resultReader.Read();
-            return new SaveResult { Record = ToRecord(resultReader) };
+            if (!resultReader.Read()) throw new InvalidOperationException("Saved composer record was not readable after commit.");
+            var savedRecord = ToRecord(resultReader);
+            _logger?.LogInformation(
+                "CSM210 SQLite composer metadata saved; record token {RecordToken}; revision {Revision}; portrait replaced {PortraitChanged}; portrait present {PortraitPresent}",
+                keyToken, savedRecord.Revision, image is not null, !string.IsNullOrWhiteSpace(savedRecord.ImageFile));
+            return new SaveResult { Record = savedRecord };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not ArgumentException)
+        {
+            _logger?.LogError(ex, "CSM500 SQLite save failed; record token {RecordToken}", keyToken);
+            throw;
         }
         finally { Gate.Release(); }
     }

@@ -1,5 +1,5 @@
 /*
- * Jellyfin Composer Shared Metadata API Controller v1.1.0.
+ * Jellyfin Composer Shared Metadata API Controller v1.2.1.
  * Jellyfin 12.2; authenticated reads, elevated admin writes; same-origin API.
  * Endpoints preserve the v3.4 browser contract, so migration of v3.3 backups works.
  * No direct Jellyfin database or native People writes; one composer per explicit PUT.
@@ -9,6 +9,7 @@ using MediaBrowser.Common.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.ComposerSharedMetadata;
 
@@ -18,23 +19,39 @@ namespace Jellyfin.Plugin.ComposerSharedMetadata;
 public sealed class ComposerMetadataController : ControllerBase
 {
     private readonly ComposerSqliteStore _store;
+    private readonly ILogger<ComposerMetadataController> _logger;
 
-    public ComposerMetadataController(IApplicationPaths paths)
+    public ComposerMetadataController(
+        IApplicationPaths paths,
+        ILogger<ComposerMetadataController> logger,
+        ILogger<ComposerSqliteStore> storeLogger)
     {
-        _store = new ComposerSqliteStore(paths.PluginConfigurationsPath);
+        _logger = logger;
+        _store = new ComposerSqliteStore(paths.PluginConfigurationsPath, storeLogger);
     }
 
     [HttpGet("health")]
-    public IActionResult Health() => Ok(new
+    public IActionResult Health()
     {
-        status = "ready",
-        storage = "plugin-sqlite",
-        pluginVersion = "1.1.0",
-        schemaVersion = 1
-    });
+        _logger.LogDebug("CSM101 Health request served");
+        return Ok(new { status = "ready", storage = "plugin-sqlite", pluginVersion = "1.2.1", schemaVersion = 1 });
+    }
 
     [HttpGet("records")]
-    public IActionResult Records() => Ok(new { schemaVersion = 1, records = _store.ReadAll() });
+    public IActionResult Records()
+    {
+        try
+        {
+            var records = _store.ReadAll();
+            _logger.LogInformation("CSM110 Composer overlay records served; count {RecordCount}", records.Count);
+            return Ok(new { schemaVersion = 1, records });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CSM510 Failed to read Composer SQLite overlays");
+            throw;
+        }
+    }
 
     [HttpGet("image-data")]
     public IActionResult ImageData([FromQuery] string key)
@@ -42,11 +59,25 @@ public sealed class ComposerMetadataController : ControllerBase
         try
         {
             var image = _store.ReadImage(key);
-            if (image is null) return NotFound();
+            if (image is null)
+            {
+                _logger.LogDebug("CSM120 Portrait-data lookup: no match");
+                return NotFound();
+            }
+            _logger.LogDebug("CSM121 Portrait-data lookup: found; mime {Mime}; bytes {Size}", image.Value.Mime, image.Value.Bytes.Length);
             Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new { imageDataUrl = "data:" + image.Value.Mime + ";base64," + Convert.ToBase64String(image.Value.Bytes) });
         }
-        catch (ArgumentException e) { return BadRequest(new { error = e.Message }); }
+        catch (ArgumentException e)
+        {
+            _logger.LogWarning("CSM122 Rejected invalid portrait-data lookup");
+            return BadRequest(new { error = e.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CSM511 Failed to read Composer portrait data");
+            throw;
+        }
     }
 
     [HttpGet("image")]
@@ -55,11 +86,25 @@ public sealed class ComposerMetadataController : ControllerBase
         try
         {
             var image = _store.ReadImage(key);
-            if (image is null) return NotFound();
+            if (image is null)
+            {
+                _logger.LogDebug("CSM123 Portrait lookup: no match");
+                return NotFound();
+            }
+            _logger.LogDebug("CSM124 Portrait lookup: found; mime {Mime}; bytes {Size}", image.Value.Mime, image.Value.Bytes.Length);
             Response.Headers["Cache-Control"] = "private, no-store";
             return File(image.Value.Bytes, image.Value.Mime);
         }
-        catch (ArgumentException e) { return BadRequest(new { error = e.Message }); }
+        catch (ArgumentException e)
+        {
+            _logger.LogWarning("CSM125 Rejected invalid portrait lookup");
+            return BadRequest(new { error = e.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CSM512 Failed to read Composer portrait");
+            throw;
+        }
     }
 
     [HttpPut("record")]
@@ -70,9 +115,17 @@ public sealed class ComposerMetadataController : ControllerBase
         try
         {
             var outcome = await _store.SaveAsync(key, request, cancellationToken).ConfigureAwait(false);
-            if (outcome.Conflict) return Conflict(new { error = "Record changed on another browser; refresh before saving.", record = outcome.Record });
+            if (outcome.Conflict)
+            {
+                return Conflict(new { error = "Record changed on another browser; refresh before saving.", record = outcome.Record });
+            }
             return Ok(outcome.Record);
         }
-        catch (ArgumentException e) { return BadRequest(new { error = e.Message }); }
+        catch (ArgumentException e)
+        {
+            // Never log the biography or base64 portrait submitted by the client.
+            _logger.LogWarning("CSM202 Rejected invalid composer metadata save request");
+            return BadRequest(new { error = e.Message });
+        }
     }
 }
