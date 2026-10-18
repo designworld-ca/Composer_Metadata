@@ -19,7 +19,7 @@ Source files `.cs` and `.csproj` are **not installed directly**; Jellyfin loads 
 
 ## Build with GitHub Actions — no compilation on your Jellyfin server
 
-1. **Export existing virtual edits on the original computer first**, especially Annabelle Chvostek's biography/picture. Use the v3.3 **Export virtual edits** feature and preserve that JSON backup. Keep the original browser's localStorage unchanged until you have verified migration.
+1. **Export existing virtual edits on the original computer first**. Use the v3.3 **Export virtual edits** feature and preserve that JSON backup. Keep the original browser's localStorage unchanged until you have verified migration.
 2. Create a GitHub repository or branch for this plugin, then **upload the contents of this source ZIP preserving `.github/workflows/build-and-package.yml` and its directory path**. This does not require changing PeopleToolkit or overwriting an existing repository.
 3. On GitHub, **Actions → Build native Composer plugin → Run workflow**. After it completes successfully, download the artifact named `jellyfin-composer-plugin-1.1.0`. It contains two installation ZIPs, one for `linux-x64` and one for `linux-arm64`, and checksums. No DLL compilation on your server.
 4. Confirm your Jellyfin container CPU architecture (`docker exec <jellyfin-container> uname -m`): `x86_64` → `linux-x64`, `aarch64` → `linux-arm64`.
@@ -42,7 +42,7 @@ Source files `.cs` and `.csproj` are **not installed directly**; Jellyfin loads 
 
 ## Safety, concurrency and visibility
 
-- Storage key for virtual composer: normalized name (`annabelle chvostek`); for real Person: `person:<jellyfin-Person-ID>`. Both types use the **same separate database**, never Jellyfin's native database.
+- Storage key for virtual composer: normalized name (`sample composer`); for real Person: `person:<jellyfin-Person-ID>`. Both types use the **same separate database**, never Jellyfin's native database.
 - Each confirmed editor save changes **one key** only, requiring `ExpectedRevision` to match. HTTP 409 prevents silent overwrites from a second browser.
 - PNG/JPEG/WebP portraits limited to 6 MiB, with MIME signature checks; biographies limited to 100,000 characters. Omitted image preserves existing portrait.
 - Browser continues working for read-only Composer browsing if plugin is unavailable, but shared writes are blocked (no browser-local fallback save).
@@ -69,4 +69,4 @@ python3 packaging/package_release.py --publish-dir out/linux-x64 --rid linux-x64
 
 ## Limitations
 
-This plugin source has **not been compiled or live-tested on Jellyfin 12.2**. The CI output cannot be guaranteed installable until the workflow completes and the plugin loads successfully on a test server. A build failure is an actionable compatibility finding, not a successful release. If the manual installed plugin loads but the endpoints return 404, collect Jellyfin logs; controller registration differences may need adjustment. Testing a single preview and save is advised before migrating all edits.
+This plugin source has been compiled or live-tested on Jellyfin 12.2. The CI output cannot be guaranteed installable until the workflow completes and the plugin loads successfully on a test server. A build failure is an actionable compatibility finding, not a successful release. If the manual installed plugin loads but the endpoints return 404, collect Jellyfin logs; controller registration differences may need adjustment. Testing a single preview and save is advised before migrating all edits.
