@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline packaging smoke test v1.1.0.
+"""Offline packaging smoke test v1.2.1.
 Uses fake file headers only inside a temporary directory. Never builds or publishes fake plugins.
 The output is NOT an installable ZIP. No Jellyfin files touched.
 """
@@ -24,5 +24,7 @@ with tempfile.TemporaryDirectory(prefix='jf-pack-test-') as directory:
     with zipfile.ZipFile(zipped[0]) as archive:
         assert archive.testzip() is None
         assert len(archive.namelist())==len(expected)+1
-        assert 'ComposerSharedMetadata_1.1.0/meta.json' in archive.namelist()
+        assert 'meta.json' in archive.namelist()
+        assert 'Jellyfin.Plugin.ComposerSharedMetadata.dll' in archive.namelist()
+        assert not any('/' in name for name in archive.namelist()), 'release ZIP may not nest the plugin DLL'
 print('PASS: packaging default dry-run, required dependencies, CRC and install ZIP layout (fake binaries only in temporary test)')
