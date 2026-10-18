@@ -1,3 +1,5 @@
+<img src="assets/icons/composer-256.png" alt="Composer Shared Metadata" width="128" height="128">
+
 # Composer Shared Metadata — native Jellyfin plugin v1.1.0 + Browser v3.6.0
 
 **Target:** Jellyfin 12.2, .NET 10; Jellyfin Web JavaScript Injector. **No separate Python service. No writes to `jellyfin.db`.**
