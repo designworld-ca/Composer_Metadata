@@ -1,0 +1,8 @@
+a
+
+    ”MÕj–  ã                   @   s–   d Z ddlZddlZddlZddlZddlmZ ddlmZ ddl	m
+Z
+mZ dZdZ
+dZed	œd
+d„Zeeeeedœd
+d„Zdd„ Zedkr’eƒ  dS )aj  Create/update a Jellyfin repository manifest entry from a *compiled* plugin ZIP.
