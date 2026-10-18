@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create/update a Jellyfin repository manifest entry from a *compiled* plugin ZIP.
 
-Version: 1.0.0 (repository metadata repair for Composer Shared Metadata 1.1.1)
+Version: 1.0.1 (repository metadata publisher; plugin version derived from compiled ZIP)
 Purpose: Resolve missing repository metadata for manually installed Composer plugin.
 Requirements: Python 3.10+ standard library, real public GitHub Release ZIP.
 Safety: Read-only by default. --apply writes ONLY --manifest (never Jellyfin DB).
@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import quote
 from zipfile import ZipFile, BadZipFile
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 GUID = "4c65902b-e89d-4549-a313-2a204c622e77"
 DLL = "Jellyfin.Plugin.ComposerSharedMetadata.dll"
 
