@@ -1,0 +1,63 @@
+# Publish a catalog entry for an EXISTING, published, binary GitHub Release.
+# v1.0.0: No DLL rebuild, Jellyfin API mutation or database access.
+name: Publish Composer repository manifest
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag for a published release containing the compiled Linux x64 installation ZIP'
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  catalog:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - name: Locate public release and download its x64 installation asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-${EVENT_TAG:-}}"
+          if [[ -z "$TAG" ]]; then echo 'No release tag supplied' >&2; exit 1; fi
+          gh release view "$TAG" -R "$REPO" --json isDraft,isPrerelease --jq '{draft: .isDraft, prerelease: .isPrerelease}'
+          mkdir -p released
+          # Catalog is Linux x64 only. ARM64 remains available by manual installation.
+          gh release download "$TAG" -R "$REPO" --pattern '*linux-x64-install.zip' --dir released
+          mapfile -t assets < <(find released -maxdepth 1 -type f -name '*linux-x64-install.zip')
+          if [[ "${#assets[@]}" != 1 ]]; then echo 'Expected exactly one x64 install ZIP in GitHub Release' >&2; exit 1; fi
+          echo "ASSET_PATH=${assets[0]}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+      - name: Generate manifest using real release asset checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/make_plugin_manifest.py --archive "$ASSET_PATH" --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --manifest manifest.json --apply
+          python3 -m json.tool manifest.json >/dev/null
+      - name: Commit manifest.json to default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo 'Repository manifest already up to date'
+          else
+            git commit -m "Update composer plugin catalog for $RELEASE_TAG"
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          fi
