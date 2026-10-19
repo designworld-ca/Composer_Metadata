@@ -1,71 +1,92 @@
 #!/usr/bin/env python3
-"""Composer plugin build source preflight v1.0.0.
+"""Composer Metadata plugin preflight v1.0.1 (Jellyfin 12.2 / .NET 10).
 
-Read-only: verifies that exact v1.2.2 C# implementation (including CS1591
-public API XML summaries) is present in the GitHub checkout before compilation.
-Usage: python3 tests/preflight_source.py --version 1.2.2
-No network, no writes, no modifications of Jellyfin databases.
+Purpose: read-only validation of the plugin project's compiled C# sources before CI.
+Usage: python3 tests/preflight_source.py --version 1.2.2 [--root PATH]
+Safety: no writes to source, Jellyfin data, or SQLite; no network calls.
+Requirements: Python 3.10+, stdlib only.
+Expected paths: plugin/*.cs and plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj.
 """
 import argparse
+import hashlib
 import pathlib
 import re
 import sys
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-REQUIRED = {
-    'ComposerMetadataController.cs': [
-        'ComposerMetadataController', 'ComposerMetadataController(', 'IActionResult Health(',
-        'IActionResult Records(', 'IActionResult ImageData(', 'IActionResult Image(',
-        'Task<IActionResult> Update('
-    ],
-    'ComposerSqliteStore.cs': [
-        'ComposerRecord', 'string Key {', 'string Name {',
-        'ComposerSqliteStore', 'Task<SaveResult> SaveAsync('
-    ],
-}
+SOURCES = ('ComposerMetadataController.cs', 'ComposerSqliteStore.cs')
 
-def check(expected_version):
-    problems = []
-    csproj = ROOT/'plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj'
+
+def check(expected_version: str, root: pathlib.Path = ROOT) -> int:
+    problems = []  # (relative_path, line, explanation)
+    root = root.resolve()
+    print(f'CSM PREFLIGHT: checked-out repository root: {root}', flush=True)
+    csproj = root/'plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj'
+    relproj = 'plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj'
     try:
-        tree=ET.parse(csproj)
-        found=tree.findtext('.//Version')
-        if found != expected_version:
-            problems.append(f'csproj <Version> is {found!r}, expected {expected_version!r}')
-        if tree.findtext('.//GenerateDocumentationFile') != 'true':
-            problems.append('csproj does not enable documentation generation')
-    except (OSError, ET.ParseError) as e:
-        problems.append(f'Cannot parse plugin project: {e}')
-    for filename in REQUIRED:
-        file = ROOT/'plugin'/filename
-        if not file.is_file():
-            problems.append(f'Missing {file}')
+        tree = ET.parse(csproj)
+        version = tree.findtext('.//Version')
+        assembly_version = tree.findtext('.//AssemblyVersion')
+        docs = tree.findtext('.//GenerateDocumentationFile')
+        print(f'PROJECT: Version={version!r}, AssemblyVersion={assembly_version!r}, GenerateDocumentationFile={docs!r}', flush=True)
+        if version != expected_version:
+            problems.append((relproj, 1, f'project <Version> is {version!r}; expected {expected_version!r}'))
+        if assembly_version != expected_version + '.0':
+            problems.append((relproj, 1, f'project <AssemblyVersion> is {assembly_version!r}; expected {expected_version}.0'))
+        if (docs or '').lower() != 'true':
+            problems.append((relproj, 1, 'GenerateDocumentationFile must be true'))
+    except (OSError, ET.ParseError) as exc:
+        problems.append((relproj, 1, f'project missing or unreadable: {exc}'))
+
+    for filename in SOURCES:
+        rel = 'plugin/' + filename
+        path = root / rel
+        try:
+            contents = path.read_bytes()
+            lines = contents.decode('utf-8').splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            problems.append((rel, 1, f'C# source missing or unreadable: {exc}'))
             continue
-        lines = file.read_text(encoding='utf-8').splitlines()
+        print(f'SOURCE: {rel} | sha256={hashlib.sha256(contents).hexdigest()} | lines={len(lines)}', flush=True)
+        missing = 0
         for idx, line in enumerate(lines):
             if not re.match(r'^\s*public\s+', line):
                 continue
-            prev = idx-1
+            prev = idx - 1
             while prev >= 0 and re.match(r'^\s*\[[^]]*\]\s*$', lines[prev]):
                 prev -= 1
             if prev < 0 or not lines[prev].strip().startswith('/// <summary>'):
-                problems.append(f'{file.name}:{idx+1}: missing XML summary: {line.strip()}')
-        print(f'SOURCE OK: {file.relative_to(ROOT)} ({len(lines)} lines)')
-    controller=(ROOT/'plugin/ComposerMetadataController.cs')
-    if controller.is_file() and f'pluginVersion = "{expected_version}"' not in controller.read_text():
-        problems.append('health endpoint does not return expected plugin version')
+                missing += 1
+                problems.append((rel, idx+1, f'CS1591 missing XML summary above: {line.strip()}'))
+        print(f'DOCUMENTATION: {rel}: {missing} missing public XML summaries', flush=True)
+
+    controller = root/'plugin/ComposerMetadataController.cs'
+    if controller.is_file():
+        src = controller.read_text(encoding='utf-8')
+        if f'pluginVersion = "{expected_version}"' not in src:
+            problems.append(('plugin/ComposerMetadataController.cs', 1,
+                             f'health endpoint must declare pluginVersion = "{expected_version}"'))
+
     if problems:
-        print('ERROR: GitHub is compiling outdated or incomplete C# sources:', file=sys.stderr)
-        for issue in problems: print(' -', issue, file=sys.stderr)
-        print('REPAIR: overwrite plugin/ComposerSqliteStore.cs and plugin/ComposerMetadataController.cs'
-              ' at the REPOSITORY ROOT (not inside an extra extracted folder).', file=sys.stderr)
+        print(f'PREFLIGHT FAILED: {len(problems)} mismatch(es) in this GitHub checkout:', file=sys.stderr, flush=True)
+        for rel, lineno, issue in problems:
+            print(f' - {rel}:{lineno}: {issue}', file=sys.stderr, flush=True)
+            # GitHub actions annotation; errors show under workflow summaries as well.
+            safe = issue.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+            print(f'::error file={rel},line={lineno},title=Composer source preflight::{safe}', flush=True)
+        print('FIX: Replace the three files in plugin/ AT THE REPOSITORY ROOT with those', file=sys.stderr)
+        print('     included in composer-ci-diagnostic-repair-v1.0.1.zip, then commit/push.', file=sys.stderr)
+        print('     Do not put files inside another ZIP directory or create a duplicate plugin/ folder.', file=sys.stderr)
         return 1
-    print('PASS: C# version and public XML documentation match v'+expected_version)
+    print(f'PREFLIGHT PASSED: plugin source and documentation match v{expected_version}', flush=True)
     return 0
 
-if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--version',default='1.2.2')
-    args=p.parse_args()
-    raise SystemExit(check(args.version))
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--version', default='1.2.2')
+    parser.add_argument('--root', type=pathlib.Path, default=ROOT,
+                        help='Check a different directory (read-only, for offline tests).')
+    args = parser.parse_args()
+    raise SystemExit(check(args.version, args.root))
