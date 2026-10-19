@@ -1,38 +1,46 @@
-# Composer Shared Metadata v1.2.2 — GitHub CI repair v1.0.0
+# Composer Shared Metadata — targeted CI source/preflight repair v1.0.1
 
-**Purpose:** Address the stale C# files and capture the actual cause of the failed GitHub Actions build run 39182634665. **This is a source / CI patch, not an installable Jellyfin plugin.** No Jellyfin server reinstall, no JavaScript Injector replacement, and no SQLite database change are needed to try it.
+**Purpose:** The GitHub Actions build run 39183563689 failed at source preflight. Its summary displayed only the generic error, not the individual mismatches. This repair makes every mismatch visible in the Actions summary and includes all three expected v1.2.2 C# project files.
 
-## Why this patch
+**This is not a compiled plugin ZIP.** Keep the working Jellyfin plugin v1.2.1 and Composer Browser v3.7.2 installed. No changes to Jellyfin configuration, composer biographies, image BLOBs, or `composer_metadata.sqlite3` are necessary.
 
-The source-code locations in your 10 `CS1591` warnings match `v1.2.1`, where `ComposerRecord` appears at line 15 and the public API lacks XML documentation. The previously issued v1.2.2 source ZIP already contains those summaries; however, it appears they were *not* in the GitHub checkout for commit `499ff19`. The warning annotations do not include the real cause of **exit code 1**; it would be misleading to say the warnings caused the failure.
+## Root cause and confidence
 
-## Apply (GitHub repository root)
+- The summary proves the preflight step failed; it does **not** prove which individual condition failed. The original script checked the C# source XML comments, project version, documentation setting, and API health version. Its summary mistakenly filtered out lines prefixed ` - `.
+- Running the preflight offline on the complete previously delivered v1.2.2 source succeeds. Therefore the prior archive is internally consistent, but the checked-out GitHub commit is not yet confirmed to match it.
+- We cannot independently retrieve the precise contents of your failed GitHub job from this runtime. The revised workflow displays the whole preflight report to resolve the ambiguity.
 
-1. In **https://github.com/designworld-ca/Composer_Metadata**, extract the ZIP to the **repository root**. Overwrite exactly these files:
-   - `plugin/ComposerSqliteStore.cs`
+## Apply directly to your repository
+
+1. Open https://github.com/designworld-ca/Composer_Metadata and select the **main** branch.
+2. Extract this ZIP. Copy the three files from `plugin/` into the existing **repository-root** `plugin/` folder, replacing their exact filename matches:
    - `plugin/ComposerMetadataController.cs`
-   - `.github/workflows/build-and-package.yml`
-   - `tests/preflight_source.py`
-   - `tests/test_documentation_warnings.py` (unchanged v1.2.2 warning regression checks)
-2. Ensure the repository contains `plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj` with `<Version>1.2.2</Version>` and `<GenerateDocumentationFile>true</GenerateDocumentationFile>`. This package does not overwrite the csproj.
-3. Confirm the two `.cs` files now contain `/// <summary>` immediately before their public classes/members. Commit to `main` and push.
-4. Run **Actions → Build native Composer plugin**. The new **Verify corrected source and version BEFORE compilation** step fails early, with an actionable error, if GitHub still has the older files.
-5. If another step fails, download the **composer-build-diagnostics** artifact from that GitHub Actions run and inspect the log corresponding to the first failed step. It will be available even when the build is unsuccessful. Share the first actual `error ...` line so the underlying issue can be corrected precisely.
+   - `plugin/ComposerSqliteStore.cs`
+   - `plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj`
+3. Also overwrite `.github/workflows/build-and-package.yml`, `tests/preflight_source.py` and `tests/test_documentation_warnings.py`. Preserve the hidden `.github` folder path; do not upload an enclosing parent directory.
+4. **Commit the files to `main`**. GitHub Actions builds the committed source; a local extracted ZIP or an uncommitted upload is not included.
+5. Run **Actions → Build native Composer plugin → Run workflow**, choosing **main**. In its `Verify corrected source...` step look for `PREFLIGHT PASSED: plugin source and documentation match v1.2.2`.
+6. If the job fails again, the GitHub Actions Summary now shows **every** missing file/version/comment rather than merely the first generic error. The `composer-build-diagnostics` artifact retains the complete logs.
 
-## Verify locally without building
+Direct browser links to check the committed files:
 
-`python3 tests/preflight_source.py --version 1.2.2`
+- https://github.com/designworld-ca/Composer_Metadata/blob/main/plugin/ComposerMetadataController.cs
+- https://github.com/designworld-ca/Composer_Metadata/blob/main/plugin/ComposerSqliteStore.cs
+- https://github.com/designworld-ca/Composer_Metadata/blob/main/plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj
 
-The workflow also runs this on the exact checked-out commit. Run `python3 -m unittest discover -s tests -p test_documentation_warnings.py -v` to check all public XML docs.
+## Verification on a local repository clone
 
-## Safety and compatibility
+```bash
+python3 tests/preflight_source.py --version 1.2.2
+python3 -m unittest discover -s tests -p 'test_preflight_source.py' -v
+python3 -m unittest discover -s tests -p 'test_documentation_warnings.py' -v
+```
 
-- Same plugin GUID `4c65902b-e89d-4549-a313-2a204c622e77`, version `1.2.2`, SQLite schema 1, and API behavior.
-- This patch deliberately does **not** touch the working Browser v3.7.2, Jellyfin runtime, Composer images, biographies, or `composer_metadata.sqlite3`.
-- Keep v1.2.1 installed and running until a full v1.2.2 GitHub build succeeds and you've backed up Jellyfin `/config`.
-- Build remains targeted exclusively to Linux x64; no ARM64 artifact is introduced.
-- The complete v1.2.2 source release from the previous delivery should remain your base: this ZIP only replaces five files.
+All commands above are read-only to the Jellyfin environment. The unit tests only create disposable test files in their temporary test directories.
 
-## Limitations
+## Safety and scope
 
-This environment cannot retrieve the private job log content from the public GitHub run, and has no .NET SDK/NuGet access for a real compile. Offline validation cannot prove which command produced the `exit code 1`; the new diagnostics explicitly capture it. The `CS1591` warnings are not treated as build errors by default and will disappear when the corrected C# files are actually compiled.
+- Native plugin GUID **4c65902b-e89d-4549-a313-2a204c622e77** is unchanged; version v1.2.2, SQLite schema v1.
+- No changes to database code behavior, editor JavaScript, API contract, C# logging, or release packaging.
+- Runner is `ubuntu-24.04`, only `linux-x64` native publish, and `actions/upload-artifact@v6`.
+- No .NET SDK or live GitHub Actions execution is available in this runtime; the next CI run remains the definitive compile test.
