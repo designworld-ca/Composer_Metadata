@@ -1,4 +1,4 @@
-# Composer Shared Metadata v1.2.2 - Linux x64 build, preflight, and failure diagnostics.
+# Composer Shared Metadata v1.2.2 - Linux x64 build, detailed preflight, failure diagnostics v1.0.1.
 # PURPOSE: Build an installable native Jellyfin 12.2 plugin using the source on THIS commit.
 # SAFETY: CI operates only inside the GitHub runner; no access to a running Jellyfin server
 #         or its SQLite data. Failed builds never publish a release. Captures errors in logs.
@@ -95,17 +95,25 @@ jobs:
         shell: bash
         run: |
           echo '## Composer plugin build failure' >> "$GITHUB_STEP_SUMMARY"
-          echo 'The **10 CS1591 documentation warnings** from the previous run were caused by stale C# sources.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'The first failing step determines the cause; do not assume warnings caused the failure.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Check the first failing step and download the **composer-build-diagnostics** artifact.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Log excerpts (latest entries, if available):' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Complete source preflight report (including each failed condition)' >> "$GITHUB_STEP_SUMMARY"
+          if [[ -s diagnostics/preflight.log ]]; then
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            cat diagnostics/preflight.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Preflight did not run; inspect the first failing step.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '### Other build errors (if any)' >> "$GITHUB_STEP_SUMMARY"
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
-          for f in diagnostics/preflight.log diagnostics/build.log diagnostics/sqlite-smoke.log \
-                   diagnostics/logging-tests.log diagnostics/documentation-tests.log \
-                   diagnostics/browser-tests.log diagnostics/publish.log diagnostics/package.log; do
+          for f in diagnostics/build.log diagnostics/sqlite-smoke.log diagnostics/logging-tests.log \
+                   diagnostics/documentation-tests.log diagnostics/browser-tests.log \
+                   diagnostics/publish.log diagnostics/package.log; do
             if [[ -s "$f" ]]; then
               printf '\n=== %s ===\n' "$f" >> "$GITHUB_STEP_SUMMARY"
               grep -E -i '(^|[ :])(error|failed|exception|NU[0-9]{4}|CS[0-9]{4}|MSB[0-9]{4})([ :]|$)' "$f" \
-                | tail -n 12 >> "$GITHUB_STEP_SUMMARY" || true
+                | tail -n 15 >> "$GITHUB_STEP_SUMMARY" || true
             fi
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
