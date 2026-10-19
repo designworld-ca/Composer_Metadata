@@ -1,5 +1,5 @@
 /*
- * ComposerSqliteStore.cs — v1.2.1 (Jellyfin 12.2/.NET 10)
+ * ComposerSqliteStore.cs — v1.2.2 (Jellyfin 12.2/.NET 10)
  * Separate SQLite data at <PluginConfigurationsPath>/ComposerSharedMetadata/composer_metadata.sqlite3.
  * PREVIEW: ReadAll/ReadImage do not initialize/mutate a database. Health is read-only.
  * APPLY: SaveAsync only after authenticated administrator PUT, exact composer key + expectedRevision.
@@ -12,32 +12,49 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.ComposerSharedMetadata;
 
+/// <summary>One composer overlay entry read from the independent SQLite database.</summary>
 public sealed class ComposerRecord
 {
+    /// <summary>Stable real or virtual composer record identifier.</summary>
     public string Key { get; set; } = string.Empty;
+    /// <summary>Display name of the composer.</summary>
     public string Name { get; set; } = string.Empty;
+    /// <summary>Composer biography stored in the plugin database.</summary>
     public string Overview { get; set; } = string.Empty;
+    /// <summary>Optimistic concurrency revision.</summary>
     public int Revision { get; set; }
     // Compatibility marker for the JavaScript client's shared-image retrieval.
+    /// <summary>Nonempty portrait marker indicating that the SQLite record contains image bytes.</summary>
     public string ImageFile { get; set; } = string.Empty;
+    /// <summary>Content type of the stored portrait.</summary>
     public string ImageMime { get; set; } = string.Empty;
+    /// <summary>UTC timestamp of the last update.</summary>
     public DateTime UpdatedUtc { get; set; }
 }
 
+/// <summary>Administrator-submitted composer metadata update, with expected revision.</summary>
 public sealed class ComposerEditRequest
 {
+    /// <summary>Display name of the composer.</summary>
     public string Name { get; set; } = string.Empty;
+    /// <summary>Composer biography stored in the plugin database.</summary>
     public string Overview { get; set; } = string.Empty;
+    /// <summary>Revision the client read before editing.</summary>
     public int ExpectedRevision { get; set; }
+    /// <summary>Optional base64 portrait to replace the existing one.</summary>
     public string? ImageDataUrl { get; set; }
 }
 
+/// <summary>Result of a revision-checked SQLite metadata update.</summary>
 public sealed class SaveResult
 {
+    /// <summary>True if the stored revision no longer matches the requested revision.</summary>
     public bool Conflict { get; init; }
+    /// <summary>Record returned after a save, or current record for conflict resolution.</summary>
     public ComposerRecord? Record { get; init; }
 }
 
+/// <summary>Accesses plugin-owned SQLite composer metadata without touching Jellyfin databases.</summary>
 public sealed class ComposerSqliteStore
 {
     private const int MaxImageBytes = 6 * 1024 * 1024;
@@ -47,6 +64,7 @@ public sealed class ComposerSqliteStore
     private readonly ILogger<ComposerSqliteStore>? _logger;
 
     // Optional logger keeps isolated smoke tests and read-only tooling compatible.
+    /// <summary>Creates a store rooted in the plugin configuration directory.</summary>
     public ComposerSqliteStore(string pluginConfigurationsPath, ILogger<ComposerSqliteStore>? logger = null)
     {
         _logger = logger;
@@ -55,6 +73,7 @@ public sealed class ComposerSqliteStore
         _file = Path.Combine(_root, "composer_metadata.sqlite3");
     }
 
+    /// <summary>Path of the plugin-owned SQLite database file.</summary>
     public string DatabasePath => _file;
 
     private static string CheckKey(string? key)
@@ -124,6 +143,7 @@ public sealed class ComposerSqliteStore
         return cmd;
     }
 
+    /// <summary>Reads all composer metadata records without changing the database.</summary>
     public Dictionary<string, ComposerRecord> ReadAll()
     {
         var result = new Dictionary<string, ComposerRecord>(StringComparer.Ordinal);
@@ -144,6 +164,7 @@ public sealed class ComposerSqliteStore
         return result;
     }
 
+    /// <summary>Reads portrait bytes for a composer, if available.</summary>
     public (byte[] Bytes, string Mime)? ReadImage(string key)
     {
         key = CheckKey(key);
@@ -188,6 +209,7 @@ public sealed class ComposerSqliteStore
         return (bytes, mime);
     }
 
+    /// <summary>Writes one composer record after validation and revision checks.</summary>
     public async Task<SaveResult> SaveAsync(string key, ComposerEditRequest request, CancellationToken cancellationToken = default)
     {
         key = CheckKey(key);

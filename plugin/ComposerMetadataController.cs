@@ -1,5 +1,5 @@
 /*
- * Jellyfin Composer Shared Metadata API Controller v1.2.1.
+ * Jellyfin Composer Shared Metadata API Controller v1.2.2.
  * Jellyfin 12.2; authenticated reads, elevated admin writes; same-origin API.
  * Endpoints preserve the v3.4 browser contract, so migration of v3.3 backups works.
  * No direct Jellyfin database or native People writes; one composer per explicit PUT.
@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.ComposerSharedMetadata;
 
+/// <summary>Authenticated REST controller for plugin-owned composer SQLite metadata.</summary>
 [ApiController]
 [Authorize]
 [Route("ComposerSharedMetadata")]
@@ -21,6 +22,7 @@ public sealed class ComposerMetadataController : ControllerBase
     private readonly ComposerSqliteStore _store;
     private readonly ILogger<ComposerMetadataController> _logger;
 
+    /// <summary>Creates the authenticated API controller and its SQLite store.</summary>
     public ComposerMetadataController(
         IApplicationPaths paths,
         ILogger<ComposerMetadataController> logger,
@@ -30,13 +32,15 @@ public sealed class ComposerMetadataController : ControllerBase
         _store = new ComposerSqliteStore(paths.PluginConfigurationsPath, storeLogger);
     }
 
+    /// <summary>Returns the read-only health, version, and schema status.</summary>
     [HttpGet("health")]
     public IActionResult Health()
     {
         _logger.LogDebug("CSM101 Health request served");
-        return Ok(new { status = "ready", storage = "plugin-sqlite", pluginVersion = "1.2.1", schemaVersion = 1 });
+        return Ok(new { status = "ready", storage = "plugin-sqlite", pluginVersion = "1.2.2", schemaVersion = 1 });
     }
 
+    /// <summary>Returns all saved composer metadata to an authenticated user.</summary>
     [HttpGet("records")]
     public IActionResult Records()
     {
@@ -53,6 +57,7 @@ public sealed class ComposerMetadataController : ControllerBase
         }
     }
 
+    /// <summary>Returns a composer portrait as a base64 data URL, if present.</summary>
     [HttpGet("image-data")]
     public IActionResult ImageData([FromQuery] string key)
     {
@@ -80,6 +85,7 @@ public sealed class ComposerMetadataController : ControllerBase
         }
     }
 
+    /// <summary>Streams a composer portrait with the stored MIME type.</summary>
     [HttpGet("image")]
     public IActionResult Image([FromQuery] string key)
     {
@@ -107,6 +113,7 @@ public sealed class ComposerMetadataController : ControllerBase
         }
     }
 
+    /// <summary>Stores one validated composer edit; administrator authorization is required.</summary>
     [HttpPut("record")]
     [Authorize(Policy = Policies.RequiresElevation)]
     [RequestSizeLimit(9_000_000)]
