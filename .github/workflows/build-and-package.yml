@@ -1,4 +1,4 @@
-# Composer Shared Metadata v1.2.2 - Linux x64 build, detailed preflight, failure diagnostics v1.0.1.
+# Composer Shared Metadata v1.2.2 - Linux x64 build, complete preflight and diagnostics v1.0.2.
 # PURPOSE: Build an installable native Jellyfin 12.2 plugin using the source on THIS commit.
 # SAFETY: CI operates only inside the GitHub runner; no access to a running Jellyfin server
 #         or its SQLite data. Failed builds never publish a release. Captures errors in logs.
@@ -117,6 +117,12 @@ jobs:
             fi
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Last 100 lines of documentation tests' >> "$GITHUB_STEP_SUMMARY"
+          if [[ -s diagnostics/documentation-tests.log ]]; then
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 100 diagnostics/documentation-tests.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload diagnostics even on failure
         if: always()
