@@ -1,4 +1,4 @@
-"""test_publisher_workflow.py — v1.0.2
+"""test_publisher_workflow.py — v1.0.3
 
 Static regression checks for version-safe GitHub release publication.
 Offline/read-only: does not require GitHub CLI, credentials, or Jellyfin server.
@@ -28,7 +28,10 @@ class PublisherWorkflowTests(unittest.TestCase):
     def test_no_latest_successful_run_without_version_check(self):
         self.assertNotIn('--limit 1 --json databaseId', self.source)
         self.assertIn('for RUN_ID in "${RUNS[@]}"', self.source)
-        self.assertIn('No successful build with artifact $EXPECTED_ARTIFACT was found.', self.source)
+        self.assertIn('No VALID successful build with a $EXPECTED_TAG Linux x64 ZIP found.', self.source)
+        self.assertIn('Checking contents of run $RUN_ID', self.source)
+        self.assertIn('if ! python3 tools/prepare_x64_release.py', self.source)
+        self.assertLess(self.source.index('if ! python3 tools/prepare_x64_release.py'), self.source.index('SELECTED_RUN="$RUN_ID"'))
 
     def test_zip_version_must_match_project(self):
         self.assertIn('tools/prepare_x64_release.py', self.source)
