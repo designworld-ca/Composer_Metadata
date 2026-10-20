@@ -1,25 +1,20 @@
-# Composer Shared Metadata Repository Publisher v1.0.1
-# Purpose: From a successful native-build Actions artifact, publish ONLY the
-#          compiled Linux x64 installation ZIP as a public GitHub Release asset,
-#          then create/update Jellyfin's manifest.json on the default branch.
-# Safety: workflow_dispatch only; no changes to Jellyfin database, plugin
-#         binaries, running containers, or browser metadata. Refuses accidental
-#         replacement of a different release binary of the same name.
-# Requirements: successful Build native Composer plugin workflow, GitHub Actions
-#               GITHUB_TOKEN with contents:write and actions:read permissions.
-# Inputs: optional build_run_id; optional release_tag (must match compiled ZIP).
-# Never treats Actions artifacts as publicly accessible Jellyfin Release URLs.
+# Composer Shared Metadata Repository Publisher v1.0.2 (2026-10-19)
+# Publishes only the Linux x64 build for the Version in the checked-out .csproj.
+# Prevents fallback to a previously successful version's artifact/release.
+# Safe: never modifies Jellyfin config or SQLite. Existing GitHub Release
+# assets are checksum-verified and are never overwritten.
+# Manual workflow only; GITHUB_TOKEN requires contents:write, actions:read.
 name: Publish Composer repository manifest
 
 on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: 'Successful Build native Composer plugin run ID (blank = latest successful run)'
+        description: 'Optional successful matching Build native Composer plugin run ID'
         required: false
         type: string
       release_tag:
-        description: 'Optional release tag (blank = derive from compiled Linux x64 ZIP)'
+        description: 'Optional release tag; must match plugin .csproj (e.g. v1.2.2)'
         required: false
         type: string
 
@@ -41,57 +36,92 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
-      - name: Find and download successful compiled build artifact
+      - name: Lock publishing to the current plugin version
+        id: expected
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          python3 tools/select_composer_build.py \
+            --project plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj \
+            --release-tag "$INPUT_TAG" --github-output "$GITHUB_OUTPUT" --apply
+
+      - name: Find and download matching successful build artifact
         id: fetch
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          INPUT_RUN_ID: ${{ inputs.build_run_id }}
+          EXPECTED_ARTIFACT: ${{ steps.expected.outputs.EXPECTED_ARTIFACT }}
+          EXPECTED_TAG: ${{ steps.expected.outputs.EXPECTED_TAG }}
         run: |
           set -euo pipefail
-          RUN_ID="$BUILD_RUN_ID"
-          if [[ -z "$RUN_ID" ]]; then
-            RUN_ID="$(gh run list -R "$REPO" --workflow build-and-package.yml --status success \
-              --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [[ -n "$INPUT_RUN_ID" ]]; then
+            if [[ ! "$INPUT_RUN_ID" =~ ^[0-9]+$ ]]; then
+              echo 'build_run_id must be a numeric Actions run ID.' >&2
+              exit 1
+            fi
+            RUNS=("$INPUT_RUN_ID")
+          else
+            mapfile -t RUNS < <(gh run list -R "$REPO" \
+              --workflow build-and-package.yml --status success --limit 50 \
+              --json databaseId --jq '.[].databaseId')
           fi
-          if [[ -z "$RUN_ID" ]]; then
-            echo 'No successful native plugin build run found. Run Build native Composer plugin first.' >&2
-            exit 1
-          fi
-          STATE="$(gh run view "$RUN_ID" -R "$REPO" --json conclusion --jq '.conclusion')"
-          if [[ "$STATE" != success ]]; then
-            echo "Run $RUN_ID is $STATE; only successful builds may be published." >&2
-            exit 1
-          fi
-          mapfile -t MATCHES < <(gh api -H 'Accept: application/vnd.github+json' \
-            "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
-            --paginate --jq '.artifacts[] | select(.expired == false) | .name' \
-            | grep '^jellyfin-composer-plugin-' || true)
-          if [[ ${#MATCHES[@]} -ne 1 ]]; then
-            printf 'Expected exactly one plugin build artifact; found %d: %s\n' "${#MATCHES[@]}" "${MATCHES[*]}" >&2
+          SELECTED_RUN=''
+          for RUN_ID in "${RUNS[@]}"; do
+            [[ -n "$RUN_ID" ]] || continue
+            STATE="$(gh run view "$RUN_ID" -R "$REPO" --json conclusion --jq '.conclusion')"
+            if [[ "$STATE" != success ]]; then
+              if [[ -n "$INPUT_RUN_ID" ]]; then
+                echo "Build run $RUN_ID is $STATE, not success." >&2
+                exit 1
+              fi
+              continue
+            fi
+            mapfile -t MATCHES < <(gh api -H 'Accept: application/vnd.github+json' \
+              "repos/$REPO/actions/runs/$RUN_ID/artifacts" --paginate \
+              --jq '.artifacts[] | select(.expired == false) | .name' \
+              | grep -Fx "$EXPECTED_ARTIFACT" || true)
+            if [[ ${#MATCHES[@]} -eq 1 ]]; then
+              SELECTED_RUN="$RUN_ID"
+              break
+            fi
+            if [[ -n "$INPUT_RUN_ID" ]]; then
+              echo "Run $RUN_ID has no unexpired artifact named $EXPECTED_ARTIFACT." >&2
+              exit 1
+            fi
+          done
+          if [[ -z "$SELECTED_RUN" ]]; then
+            echo "No successful build with artifact $EXPECTED_ARTIFACT was found." >&2
+            echo "Run 'Build native Composer plugin' for $EXPECTED_TAG first, then publish." >&2
+            echo 'If necessary, supply the successful build_run_id explicitly.' >&2
             exit 1
           fi
           mkdir -p downloaded
-          gh run download "$RUN_ID" -R "$REPO" --name "${MATCHES[0]}" --dir downloaded
-          mapfile -d '' -t X64_ZIPS < <(find downloaded -type f -name '*-linux-x64-install.zip' -print0)
+          gh run download "$SELECTED_RUN" -R "$REPO" \
+            --name "$EXPECTED_ARTIFACT" --dir downloaded
+          mapfile -d '' -t X64_ZIPS < <(find downloaded -type f \
+            -name '*-linux-x64-install.zip' -print0)
           if [[ ${#X64_ZIPS[@]} -ne 1 ]]; then
-            printf 'Expected exactly one compiled Linux x64 install ZIP; found %d\n' "${#X64_ZIPS[@]}" >&2
+            printf 'Expected one Linux x64 installation ZIP; found %d\n' "${#X64_ZIPS[@]}" >&2
             exit 1
           fi
           echo "archive=${X64_ZIPS[0]}" >> "$GITHUB_OUTPUT"
-          echo "Build run $RUN_ID: Linux x64 installation archive ${X64_ZIPS[0]}"
+          echo "build_run_id=$SELECTED_RUN" >> "$GITHUB_OUTPUT"
+          echo "Selected matching $EXPECTED_ARTIFACT from successful build $SELECTED_RUN"
 
-      - name: Validate Linux x64 plugin ZIP and derive release tag
+      - name: Validate compiled Linux x64 ZIP and exact version
         id: meta
         shell: bash
         env:
-          INPUT_TAG: ${{ inputs.release_tag }}
+          EXPECTED_TAG: ${{ steps.expected.outputs.EXPECTED_TAG }}
           ARCHIVE: ${{ steps.fetch.outputs.archive }}
         run: |
           set -euo pipefail
           python3 tools/prepare_x64_release.py --archive "$ARCHIVE" \
-            --release-tag "$INPUT_TAG" --github-output "$GITHUB_OUTPUT" --apply
+            --release-tag "$EXPECTED_TAG" --github-output "$GITHUB_OUTPUT" --apply
 
       - name: Create or verify public GitHub Release asset
         shell: bash
@@ -142,12 +172,12 @@ jobs:
             --archive "verified-release/$ASSET_NAME" --repo "$REPO" \
             --tag "$TAG" --manifest manifest.json --apply
           python3 -m json.tool manifest.json >/dev/null
-          python3 - <<'PY'
+          python3 - <<'PYVALIDATE'
           import json
           from pathlib import Path
-          p = json.loads(Path('manifest.json').read_text())
-          assert len([r for r in p if r.get('guid') == '4c65902b-e89d-4549-a313-2a204c622e77']) == 1
-          PY
+          records = json.loads(Path('manifest.json').read_text())
+          assert len([r for r in records if r.get('guid') == '4c65902b-e89d-4549-a313-2a204c622e77']) == 1
+          PYVALIDATE
 
       - name: Commit manifest on default branch (if changed)
         shell: bash
@@ -172,8 +202,10 @@ jobs:
           REPO: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           TAG: ${{ steps.meta.outputs.RELEASE_TAG }}
+          BUILD_RUN_ID: ${{ steps.fetch.outputs.build_run_id }}
         run: |
           echo "### Composer Shared Metadata Linux x64 Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build run: $BUILD_RUN_ID" >> "$GITHUB_STEP_SUMMARY"
           echo "- GitHub Release: https://github.com/$REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
           echo "- Jellyfin repository URL: https://raw.githubusercontent.com/$REPO/$DEFAULT_BRANCH/manifest.json" >> "$GITHUB_STEP_SUMMARY"
           echo '- Only the Linux x64 build is published; no ARM64 asset is added by this workflow.' >> "$GITHUB_STEP_SUMMARY"
