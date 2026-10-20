@@ -1,4 +1,4 @@
-# Composer Shared Metadata Repository Publisher v1.0.2 (2026-10-19)
+# Composer Shared Metadata Repository Publisher v1.0.3 (2026-10-19)
 # Publishes only the Linux x64 build for the Version in the checked-out .csproj.
 # Prevents fallback to a previously successful version's artifact/release.
 # Safe: never modifies Jellyfin config or SQLite. Existing GitHub Release
@@ -70,47 +70,62 @@ jobs:
               --json databaseId --jq '.[].databaseId')
           fi
           SELECTED_RUN=''
+          SELECTED_ARCHIVE=''
           for RUN_ID in "${RUNS[@]}"; do
             [[ -n "$RUN_ID" ]] || continue
             STATE="$(gh run view "$RUN_ID" -R "$REPO" --json conclusion --jq '.conclusion')"
             if [[ "$STATE" != success ]]; then
-              if [[ -n "$INPUT_RUN_ID" ]]; then
-                echo "Build run $RUN_ID is $STATE, not success." >&2
-                exit 1
-              fi
+              echo "Skipping build run $RUN_ID: result $STATE (not success)."
+              if [[ -n "$INPUT_RUN_ID" ]]; then exit 1; fi
               continue
             fi
             mapfile -t MATCHES < <(gh api -H 'Accept: application/vnd.github+json' \
               "repos/$REPO/actions/runs/$RUN_ID/artifacts" --paginate \
               --jq '.artifacts[] | select(.expired == false) | .name' \
               | grep -Fx "$EXPECTED_ARTIFACT" || true)
-            if [[ ${#MATCHES[@]} -eq 1 ]]; then
-              SELECTED_RUN="$RUN_ID"
-              break
+            if [[ ${#MATCHES[@]} -ne 1 ]]; then
+              echo "Skipping run $RUN_ID: expected exactly one unexpired $EXPECTED_ARTIFACT artifact; found ${#MATCHES[@]}."
+              if [[ -n "$INPUT_RUN_ID" ]]; then exit 1; fi
+              continue
             fi
-            if [[ -n "$INPUT_RUN_ID" ]]; then
-              echo "Run $RUN_ID has no unexpired artifact named $EXPECTED_ARTIFACT." >&2
-              exit 1
+
+            # An Actions artifact name can be correct while its ZIP meta.json is stale.
+            # Inspect EVERY candidate BEFORE selecting any release tag or asset.
+            CANDIDATE_DIR="downloaded/run-$RUN_ID"
+            mkdir -p "$CANDIDATE_DIR"
+            if ! gh run download "$RUN_ID" -R "$REPO" \
+              --name "$EXPECTED_ARTIFACT" --dir "$CANDIDATE_DIR"; then
+              echo "Skipping run $RUN_ID: artifact download failed."
+              if [[ -n "$INPUT_RUN_ID" ]]; then exit 1; fi
+              continue
             fi
+            mapfile -d '' -t X64_ZIPS < <(find "$CANDIDATE_DIR" -type f \
+              -name '*-linux-x64-install.zip' -print0)
+            if [[ ${#X64_ZIPS[@]} -ne 1 ]]; then
+              echo "Skipping run $RUN_ID: expected one Linux x64 install ZIP, found ${#X64_ZIPS[@]}."
+              if [[ -n "$INPUT_RUN_ID" ]]; then exit 1; fi
+              continue
+            fi
+            echo "Checking contents of run $RUN_ID: ${X64_ZIPS[0]} against $EXPECTED_TAG"
+            if ! python3 tools/prepare_x64_release.py \
+              --archive "${X64_ZIPS[0]}" --release-tag "$EXPECTED_TAG"; then
+              echo "Skipping run $RUN_ID: ZIP meta.json and project version do not match. Rebuild with the updated build workflow."
+              if [[ -n "$INPUT_RUN_ID" ]]; then exit 1; fi
+              continue
+            fi
+            SELECTED_RUN="$RUN_ID"
+            SELECTED_ARCHIVE="${X64_ZIPS[0]}"
+            break
           done
           if [[ -z "$SELECTED_RUN" ]]; then
-            echo "No successful build with artifact $EXPECTED_ARTIFACT was found." >&2
-            echo "Run 'Build native Composer plugin' for $EXPECTED_TAG first, then publish." >&2
-            echo 'If necessary, supply the successful build_run_id explicitly.' >&2
+            echo "No VALID successful build with a $EXPECTED_TAG Linux x64 ZIP found." >&2
+            echo "Artifact name alone isn't sufficient; the archive's meta.json must say $EXPECTED_TAG." >&2
+            echo "Commit the corrected build-and-package.yml AND packaging/package_release.py, then rebuild." >&2
             exit 1
           fi
-          mkdir -p downloaded
-          gh run download "$SELECTED_RUN" -R "$REPO" \
-            --name "$EXPECTED_ARTIFACT" --dir downloaded
-          mapfile -d '' -t X64_ZIPS < <(find downloaded -type f \
-            -name '*-linux-x64-install.zip' -print0)
-          if [[ ${#X64_ZIPS[@]} -ne 1 ]]; then
-            printf 'Expected one Linux x64 installation ZIP; found %d\n' "${#X64_ZIPS[@]}" >&2
-            exit 1
-          fi
-          echo "archive=${X64_ZIPS[0]}" >> "$GITHUB_OUTPUT"
+          echo "archive=$SELECTED_ARCHIVE" >> "$GITHUB_OUTPUT"
           echo "build_run_id=$SELECTED_RUN" >> "$GITHUB_OUTPUT"
-          echo "Selected matching $EXPECTED_ARTIFACT from successful build $SELECTED_RUN"
+          echo "Selected verified $EXPECTED_ARTIFACT from successful build $SELECTED_RUN"
 
       - name: Validate compiled Linux x64 ZIP and exact version
         id: meta

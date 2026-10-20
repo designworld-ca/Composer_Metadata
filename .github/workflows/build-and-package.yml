@@ -1,8 +1,6 @@
-# Composer Shared Metadata v1.2.2 - Linux x64 build, complete preflight and diagnostics v1.0.2.
-# PURPOSE: Build an installable native Jellyfin 12.2 plugin using the source on THIS commit.
-# SAFETY: CI operates only inside the GitHub runner; no access to a running Jellyfin server
-#         or its SQLite data. Failed builds never publish a release. Captures errors in logs.
-# USAGE: Actions > Build native Composer plugin > Run workflow.
+# Composer plugin build v1.0.3 — version-consistent Jellyfin 12.2 Linux x64 archives.
+# Runs on explicit workflow_dispatch, code push, or v* tag. No Jellyfin DB access.
+# Only build runner downloads .NET SDK and NuGet; no SDK needed on Jellyfin server.
 name: Build native Composer plugin
 on:
   workflow_dispatch:
@@ -15,127 +13,48 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository at triggering commit
-        uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-
-      - name: Prepare diagnostics and identify compiled commit
-        shell: bash
-        run: |
-          mkdir -p diagnostics
-          echo "Commit: $(git rev-parse HEAD)" | tee diagnostics/commit.txt
-          echo 'C# inputs:' | tee -a diagnostics/commit.txt
-          sha256sum plugin/ComposerSqliteStore.cs plugin/ComposerMetadataController.cs | tee -a diagnostics/commit.txt
-
-      - name: Verify corrected source and version BEFORE compilation
-        shell: bash
-        run: |
-          set -o pipefail
-          python3 tests/preflight_source.py --version 1.2.2 2>&1 | tee diagnostics/preflight.log
-
-      - name: Set up .NET 10
-        uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-
-      - name: Restore and build Jellyfin 12.2 plugin
+      - name: Resolve plugin version from checked-out C# project
+        id: version
         shell: bash
         run: |
-          set -o pipefail
-          dotnet build plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj \
-            --configuration Release --nologo -v normal 2>&1 | tee diagnostics/build.log
-
-      - name: Test SQLite store with temporary database
-        shell: bash
+          set -euo pipefail
+          python3 tools/select_composer_build.py --project plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --github-output "$GITHUB_OUTPUT" --apply
+      - name: Restore and build against Jellyfin 12.2
+        run: dotnet build plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --configuration Release
+      - name: Test SQLite store using separate temp DB
+        run: dotnet run --project tests/StoreSmoke.csproj --configuration Release
+      - name: Verify logging coverage and privacy invariants
+        run: python3 -m unittest discover -s tests -p test_logging.py -v
+      - name: Test the Composer Browser
         run: |
-          set -o pipefail
-          dotnet run --project tests/StoreSmoke.csproj --configuration Release \
-            2>&1 | tee diagnostics/sqlite-smoke.log
-
-      - name: Test logging and API documentation
-        shell: bash
+          node --check web/jellyfin_composers_api_browser_v3_7_2.js
+          node tests/test_composer_api_v3_7_2.js
+      - name: Publish Linux x64 plugin libraries
         run: |
-          set -o pipefail
-          python3 -m unittest discover -s tests -p 'test_logging.py' -v 2>&1 | tee diagnostics/logging-tests.log
-          python3 -m unittest discover -s tests -p 'test_documentation_warnings.py' -v 2>&1 | tee diagnostics/documentation-tests.log
-
-      - name: Test Composer Browser v3.7.2
-        shell: bash
+          dotnet publish plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --configuration Release -r linux-x64 --self-contained false --output out/linux-x64
+      - name: Assemble platform-specific install ZIPs
         run: |
-          set -o pipefail
-          node --check web/jellyfin_composers_api_browser_v3_7_2.js 2>&1 | tee diagnostics/browser-syntax.log
-          node tests/test_composer_api_v3_7_2.js 2>&1 | tee diagnostics/browser-tests.log
-
-      - name: Publish Linux x64 plugin binaries
-        shell: bash
-        run: |
-          set -o pipefail
-          dotnet publish plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj \
-            --configuration Release -r linux-x64 --self-contained false \
-            --output out/linux-x64 2>&1 | tee diagnostics/publish.log
-
-      - name: Package Linux x64 installation ZIP
-        shell: bash
-        run: |
-          set -o pipefail
-          python3 packaging/package_release.py --publish-dir out/linux-x64 --rid linux-x64 --apply \
-            2>&1 | tee diagnostics/package.log
+          python3 packaging/package_release.py --publish-dir out/linux-x64 --rid linux-x64 --expected-version "${{ steps.version.outputs.EXPECTED_VERSION }}" --apply
           (cd dist && sha256sum *.zip > SHA256SUMS.txt)
-
-      - name: Upload compiled Linux x64 ZIP
+      - name: Validate compiled ZIP version before publishing artifact
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.EXPECTED_VERSION }}
+          EXPECTED_TAG: ${{ steps.version.outputs.EXPECTED_TAG }}
+        run: |
+          set -euo pipefail
+          ZIP="dist/jellyfin-composer-shared-metadata-${EXPECTED_VERSION}-linux-x64-install.zip"
+          test -f "$ZIP" || { echo "Missing expected archive $ZIP" >&2; exit 1; }
+          python3 tools/prepare_x64_release.py --archive "$ZIP" --release-tag "$EXPECTED_TAG"
+      - name: Upload built install ZIPs
         uses: actions/upload-artifact@v6
         with:
-          name: jellyfin-composer-plugin-1.2.2
+          name: ${{ steps.version.outputs.EXPECTED_ARTIFACT }}
           path: dist/*
           if-no-files-found: error
-
-      - name: Summarize failed stage
-        if: failure()
-        shell: bash
-        run: |
-          echo '## Composer plugin build failure' >> "$GITHUB_STEP_SUMMARY"
-          echo 'The first failing step determines the cause; do not assume warnings caused the failure.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Check the first failing step and download the **composer-build-diagnostics** artifact.' >> "$GITHUB_STEP_SUMMARY"
-          echo '### Complete source preflight report (including each failed condition)' >> "$GITHUB_STEP_SUMMARY"
-          if [[ -s diagnostics/preflight.log ]]; then
-            echo '```text' >> "$GITHUB_STEP_SUMMARY"
-            cat diagnostics/preflight.log >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'Preflight did not run; inspect the first failing step.' >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo '### Other build errors (if any)' >> "$GITHUB_STEP_SUMMARY"
-          echo '```text' >> "$GITHUB_STEP_SUMMARY"
-          for f in diagnostics/build.log diagnostics/sqlite-smoke.log diagnostics/logging-tests.log \
-                   diagnostics/documentation-tests.log diagnostics/browser-tests.log \
-                   diagnostics/publish.log diagnostics/package.log; do
-            if [[ -s "$f" ]]; then
-              printf '\n=== %s ===\n' "$f" >> "$GITHUB_STEP_SUMMARY"
-              grep -E -i '(^|[ :])(error|failed|exception|NU[0-9]{4}|CS[0-9]{4}|MSB[0-9]{4})([ :]|$)' "$f" \
-                | tail -n 15 >> "$GITHUB_STEP_SUMMARY" || true
-            fi
-          done
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo '### Last 100 lines of documentation tests' >> "$GITHUB_STEP_SUMMARY"
-          if [[ -s diagnostics/documentation-tests.log ]]; then
-            echo '```text' >> "$GITHUB_STEP_SUMMARY"
-            tail -n 100 diagnostics/documentation-tests.log >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload diagnostics even on failure
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: composer-build-diagnostics
-          path: diagnostics/
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Publish GitHub Release on version tag
-        if: startsWith(github.ref, 'refs/tags/v') && success()
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
+      # GitHub Release publication is handled only by publish-composer-manifest.yml,
+      # after the archive version is verified. No automatic tag publication here.
