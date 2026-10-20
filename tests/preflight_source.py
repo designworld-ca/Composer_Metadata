@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Composer Metadata plugin preflight v1.0.1 (Jellyfin 12.2 / .NET 10).
+"""Composer Metadata plugin preflight v1.0.2 (Jellyfin 12.2 / .NET 10).
 
-Purpose: read-only validation of the plugin project's compiled C# sources before CI.
+Purpose: read-only validation of the plugin project's complete compiled public C# surface before CI.
 Usage: python3 tests/preflight_source.py --version 1.2.2 [--root PATH]
 Safety: no writes to source, Jellyfin data, or SQLite; no network calls.
 Requirements: Python 3.10+, stdlib only.
@@ -15,7 +15,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SOURCES = ('ComposerMetadataController.cs', 'ComposerSqliteStore.cs')
+SOURCES = ('ComposerMetadataController.cs', 'ComposerSqliteStore.cs', 'Plugin.cs', 'PluginConfiguration.cs')
 
 
 def check(expected_version: str, root: pathlib.Path = ROOT) -> int:
@@ -78,6 +78,20 @@ def check(expected_version: str, root: pathlib.Path = ROOT) -> int:
         print('FIX: Replace the three files in plugin/ AT THE REPOSITORY ROOT with those', file=sys.stderr)
         print('     included in composer-ci-diagnostic-repair-v1.0.1.zip, then commit/push.', file=sys.stderr)
         print('     Do not put files inside another ZIP directory or create a duplicate plugin/ folder.', file=sys.stderr)
+        return 1
+    # Validate the project against the known-safe SQLite provider package floor.
+    try:
+        proj_text = csproj.read_text(encoding='utf-8')
+        if 'Include="Microsoft.Data.Sqlite" Version="10.0.13"' not in proj_text:
+            problems.append((relproj, 1, 'Microsoft.Data.Sqlite 10.0.13 required to avoid vulnerable transitive SQLitePCLRaw 2.1.11 (NU1903)'))
+    except OSError as exc:
+        problems.append((relproj, 1, f'Cannot confirm SQLite dependency: {exc}'))
+    if problems:
+        print(f'PREFLIGHT FAILED: {len(problems)} additional SQLite dependency mismatch(es):', file=sys.stderr, flush=True)
+        for rel, lineno, issue in problems:
+            print(f' - {rel}:{lineno}: {issue}', file=sys.stderr, flush=True)
+            safe = issue.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+            print(f'::error file={rel},line={lineno},title=Composer SQLite dependency preflight::{safe}', flush=True)
         return 1
     print(f'PREFLIGHT PASSED: plugin source and documentation match v{expected_version}', flush=True)
     return 0

@@ -23,6 +23,13 @@ class DocumentationWarnings(unittest.TestCase):
                 if j < 0 or not lines[j].strip().startswith('/// <summary>'):
                     issues.append(f'{file.name}:{i+1}: {line.strip()}')
         self.assertFalse(issues, '\n'.join(issues))
+    def test_sqlite_dependency_avoids_nu1903(self):
+        import xml.etree.ElementTree as ET
+        csproj=ET.parse(ROOT/'plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj').getroot()
+        packages={p.get('Include'):p.get('Version') for p in csproj.findall('.//PackageReference')}
+        self.assertEqual(packages.get('Microsoft.Data.Sqlite'), '10.0.13')
+        self.assertNotIn('NuGetAuditSuppress', (ROOT/'plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj').read_text())
+
     def test_node24_artifact_action_and_no_warning_suppression(self):
         workflow=(ROOT/'.github/workflows/build-and-package.yml').read_text()
         self.assertIn('actions/upload-artifact@v6', workflow)
