@@ -19,7 +19,9 @@ Avoid packaging Jellyfin server runtime DLLs, include SQLite runtime dependencie
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="12.2.0" ExcludeAssets="runtime" />
     <PackageReference Include="Jellyfin.Model" Version="12.2.0" ExcludeAssets="runtime" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.1" />
+    <!-- Microsoft.Data.Sqlite 10.0.13 requires SQLitePCLRaw >=2.1.13;
+         native sqlite3 2.1.11 is affected by GHSA-2m69-gcr7-jv3q (NU1903). -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>

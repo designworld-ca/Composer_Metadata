@@ -1,5 +1,5 @@
 /*
- * Jellyfin Composer Shared Metadata Plugin v1.2.1
+ * Jellyfin Composer Shared Metadata Plugin v1.2.2
  * Native Jellyfin 12.2/net10 entry point. Separate SQLite metadata overlays only.
  * Reads do not change disk. Writes occur only via explicit, administrator-authorized PUT.
  * Does not open or mutate jellyfin.db, tags, track credits or native People records.
@@ -13,24 +13,31 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.ComposerSharedMetadata;
 
+/// <summary>Jellyfin plugin entry point and shared metadata information page.</summary>
 public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
+    /// <summary>Jellyfin plugin entry point and shared metadata information page.</summary>
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, ILogger<Plugin> logger)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
         logger.LogInformation(
             "CSM100 Composer Shared Metadata plugin {Version} loaded; independent SQLite storage, schema {SchemaVersion}",
-            "1.2.1", 1);
+            "1.2.2", 1);
     }
 
+    /// <summary>Currently loaded plugin instance.</summary>
     public static Plugin? Instance { get; private set; }
+    /// <summary>Human-readable plugin name.</summary>
     public override string Name => "Composer Shared Metadata";
+    /// <summary>Description shown in Jellyfin plugin manager.</summary>
     public override string Description => "Admin-edited composer biographies and portraits stored in a separate SQLite database.";
+    /// <summary>Stable plugin identifier, unchanged across upgrades.</summary>
     public override Guid Id => Guid.Parse("4c65902b-e89d-4549-a313-2a204c622e77");
 
     // Adds a first-class informational settings page in Dashboard > Plugins.
     // Enable/disable/uninstall remain Jellyfin's built-in plugin manager actions.
+    /// <summary>Returns the embedded configuration information page.</summary>
     public IEnumerable<PluginPageInfo> GetPages() =>
     [
         new PluginPageInfo
