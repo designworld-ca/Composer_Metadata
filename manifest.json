@@ -8,6 +8,14 @@
     "category": "Metadata",
     "versions": [
       {
+        "version": "1.2.2.0",
+        "changelog": "Composer metadata plugin, independently stored in SQLite; Jellyfin 12.2.",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/designworld-ca/Composer_Metadata/releases/download/v1.2.2/jellyfin-composer-shared-metadata-1.2.2-linux-x64-install.zip",
+        "checksum": "bb4e33826e452dc53fe80008ef7276ff",
+        "timestamp": "2026-10-20T01:21:22Z"
+      },
+      {
         "version": "1.2.1.0",
         "changelog": "Composer metadata plugin, independently stored in SQLite; Jellyfin 12.2.",
         "targetAbi": "12.2.0.0",
