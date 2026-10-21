@@ -1,5 +1,5 @@
 /*
- * StoreSmoke v1.2.1. In temporary isolated directory only; never touches Jellyfin or production data.
+ * StoreSmoke v1.2.3. In temporary isolated directory only; never touches Jellyfin or production data.
  * Run: dotnet run --project tests/StoreSmoke.csproj -c Release
  * Confirms read-only no DB creation, key-revision conflicts, portrait preservation, blob retrieval.
  */

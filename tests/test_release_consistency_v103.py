@@ -43,7 +43,7 @@ class PackageTest(unittest.TestCase):
         self.proj.parent.mkdir(parents=True, exist_ok=True)
         self.pub = self.root/'out/linux-x64'
         self.pub.mkdir(parents=True, exist_ok=True)
-        for name in (DLL, 'Microsoft.Data.Sqlite.dll', 'SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'libe_sqlite3.so'):
+        for name in (DLL, 'Microsoft.Data.Sqlite.dll', 'SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'SQLitePCLRaw.batteries_v2.dll', 'libe_sqlite3.so'):
             (self.pub/name).write_bytes(b'fake binaries for packaging test')
 
     def run_packager(self, *args):

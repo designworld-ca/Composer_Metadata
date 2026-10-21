@@ -2,7 +2,7 @@
 """Composer Metadata plugin preflight v1.0.2 (Jellyfin 12.2 / .NET 10).
 
 Purpose: read-only validation of the plugin project's complete compiled public C# surface before CI.
-Usage: python3 tests/preflight_source.py --version 1.2.2 [--root PATH]
+Usage: python3 tests/preflight_source.py --version 1.2.3 [--root PATH]
 Safety: no writes to source, Jellyfin data, or SQLite; no network calls.
 Requirements: Python 3.10+, stdlib only.
 Expected paths: plugin/*.cs and plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj.
@@ -99,7 +99,7 @@ def check(expected_version: str, root: pathlib.Path = ROOT) -> int:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='1.2.2')
+    parser.add_argument('--version', default='1.2.3')
     parser.add_argument('--root', type=pathlib.Path, default=ROOT,
                         help='Check a different directory (read-only, for offline tests).')
     args = parser.parse_args()

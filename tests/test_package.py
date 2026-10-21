@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline packaging smoke test v1.2.1.
+"""Offline packaging smoke test v1.2.2.
 Uses fake file headers only inside a temporary directory. Never builds or publishes fake plugins.
 The output is NOT an installable ZIP. No Jellyfin files touched.
 """
@@ -12,7 +12,7 @@ with tempfile.TemporaryDirectory(prefix='jf-pack-test-') as directory:
     root_temp = pathlib.Path(directory)
     pub = root_temp / 'publish'
     pub.mkdir()
-    expected = ['Jellyfin.Plugin.ComposerSharedMetadata.dll', 'Microsoft.Data.Sqlite.dll', 'SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'libe_sqlite3.so']
+    expected = ['Jellyfin.Plugin.ComposerSharedMetadata.dll', 'Microsoft.Data.Sqlite.dll', 'SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll', 'SQLitePCLRaw.batteries_v2.dll', 'libe_sqlite3.so']
     for name in expected: (pub / name).write_bytes(b'not-a-real-binary-test-only')
     command=['python3',str(root/'packaging/package_release.py'),'--publish-dir',str(pub),'--rid','linux-x64','--output-dir',str(root_temp/'dist')]
     check=subprocess.run(command,capture_output=True,text=True,check=True)

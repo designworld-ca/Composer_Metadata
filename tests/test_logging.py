@@ -101,7 +101,7 @@ class LoggingCoverage(unittest.TestCase):
             # Placeholders are intentionally invalid assemblies; never install.
             for name in (MAIN_DLL, 'Microsoft.Data.Sqlite.dll',
                          'SQLitePCLRaw.core.dll', 'SQLitePCLRaw.provider.e_sqlite3.dll',
-                         'libe_sqlite3.so'):
+                         'SQLitePCLRaw.batteries_v2.dll', 'libe_sqlite3.so'):
                 (publish / name).write_bytes(b'TEST FIXTURE ONLY - NOT A BINARY')
             output = work / 'dist'
             command = [sys.executable, str(PACKAGER), '--publish-dir', str(publish),

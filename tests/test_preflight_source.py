@@ -10,12 +10,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class SourcePreflight(unittest.TestCase):
     def invoke(self, root):
-        return subprocess.run(['python3', str(ROOT/'tests/preflight_source.py'), '--version','1.2.2','--root',str(root)], text=True, capture_output=True)
+        return subprocess.run(['python3', str(ROOT/'tests/preflight_source.py'), '--version','1.2.3','--root',str(root)], text=True, capture_output=True)
     def setup_root(self, root):
         (root/'plugin').mkdir()
         for n in ('ComposerMetadataController.cs','ComposerSqliteStore.cs','Plugin.cs','PluginConfiguration.cs','Jellyfin.Plugin.ComposerSharedMetadata.csproj'):
             shutil.copy(ROOT/'plugin'/n, root/'plugin'/n)
-    def test_supplied_v122_sources_pass(self):
+    def test_supplied_v123_sources_pass(self):
         self.assertEqual(self.invoke(ROOT).returncode, 0)
     def test_old_controller_documentation_is_listed(self):
         with tempfile.TemporaryDirectory() as d:
@@ -58,7 +58,7 @@ class SourcePreflight(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=pathlib.Path(d);self.setup_root(root)
             p=root/'plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj'
-            p.write_text(p.read_text().replace('<Version>1.2.2</Version>', '<Version>1.2.1</Version>'))
+            p.write_text(p.read_text().replace('<Version>1.2.3</Version>', '<Version>1.2.1</Version>'))
             r=self.invoke(root)
             self.assertNotEqual(r.returncode,0)
             self.assertIn('project <Version> is', r.stdout+r.stderr)
@@ -66,13 +66,15 @@ class SourcePreflight(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=pathlib.Path(d);self.setup_root(root)
             p=root/'plugin/ComposerMetadataController.cs'
-            p.write_text(p.read_text().replace('pluginVersion = "1.2.2"', 'pluginVersion = "1.2.1"'))
+            p.write_text(p.read_text().replace('pluginVersion = "1.2.3"', 'pluginVersion = "1.2.1"'))
             r=self.invoke(root)
             self.assertNotEqual(r.returncode,0)
             self.assertIn('health endpoint must declare pluginVersion',r.stdout+r.stderr)
     def test_workflow_includes_preflight_in_summary(self):
         yml=(ROOT/'.github/workflows/build-and-package.yml').read_text()
-        self.assertIn('cat diagnostics/preflight.log >> "$GITHUB_STEP_SUMMARY"',yml)
+        self.assertIn('Verify current source and documentation',yml)
+        self.assertIn('tests/preflight_source.py --version',yml)
+        self.assertIn('steps.version.outputs.EXPECTED_VERSION',yml)
         self.assertIn('actions/upload-artifact@v6',yml)
         self.assertNotIn('actions/upload-artifact@v4',yml)
 if __name__ == '__main__':unittest.main()

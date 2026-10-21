@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only native plugin source checks v1.2.2. Not a substitute for C# compilation.
+"""Read-only native plugin source checks v1.2.3. Not a substitute for C# compilation.
 Run: python3 tests/verify_structure.py. No files changed.
 """
 from pathlib import Path
@@ -10,7 +10,7 @@ import yaml
 root=Path(__file__).resolve().parents[1]
 project=ET.parse(root/'plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj').getroot()
 props={e.tag:e.text for e in project.iter() if e.tag in ('TargetFramework','Version')}
-assert props['TargetFramework']=='net10.0' and props['Version']=='1.2.2'
+assert props['TargetFramework']=='net10.0' and props['Version']=='1.2.3'
 refs={(x.attrib['Include'],x.attrib.get('Version','')):x for x in project.findall('.//PackageReference')}
 assert ('Jellyfin.Controller','12.2.0') in refs
 assert ('Microsoft.Data.Sqlite','10.0.13') in refs

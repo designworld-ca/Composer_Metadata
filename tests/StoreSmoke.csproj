@@ -1,9 +1,10 @@
 <!-- Composer SQLite storage smoke tests v1.1.0; no real Jellyfin server/database touched. -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Program.cs" />
     <ProjectReference Include="../plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj" />
     <!-- Only smoke-test runner uses runtime Jellyfin assemblies; the deployable plugin must not bundle these. -->
     <PackageReference Include="Jellyfin.Controller" Version="12.2.0" />
