@@ -1,31 +1,32 @@
-# Composer Metadata — Logging Test Repair v1.0.4
+# Composer Shared Metadata v1.2.3 — Linux x64 packaging fix
 
-This **test-only** hotfix corrects the GitHub Actions failure:
+This complete source release repairs the **SQLite managed-assembly loading failure** reported after upgrading to plugin v1.2.2.
 
-`AssertionError: "VERSION = '1.2.1'" not found in packaging/package_release.py`
+**No SQLite schema change.** Composer Browser v3.7.2 and plugin GUID `4c65902b-e89d-4549-a313-2a204c622e77` are unchanged. The error `CSM510: Could not load file or assembly Microsoft.Data.Sqlite, Version=10.0.13.0` was caused by a plugin runtime dependency-loading issue. The existing v1.2.2 `meta.json` whitelisted only the main plugin DLL, even though the packaging script included dependent assemblies. This version adds all managed SQLite DLLs to Jellyfin's plugin assembly whitelist and verifies the ZIP before publishing.
 
-The v1.0.3 packager intentionally derives the plugin version from the C# project rather than a hard-coded `VERSION`. The older test was incorrect for that new design.
+## Install safely
 
-## Apply
+1. Back up the **entire directory** `/home/roo/runtipi/app-data/migrated/jellyfin/data/config/data/plugins/configurations/ComposerSharedMetadata/` while preserving the database and any `-wal`/`-shm` files. For a consistent snapshot, use SQLite's online backup or stop Jellyfin before copying. Never delete it during upgrade.
+2. Merge the files from this ZIP into the root of your [Composer_Metadata GitHub repository](https://github.com/designworld-ca/Composer_Metadata), preserving `.github/` and `plugin/` paths. Review local modifications first. Commit and push.
+3. Run **Build native Composer plugin**. It must publish a Linux x64 artifact whose ZIP `meta.json` is version `1.2.3.0` and whose `assemblies` array lists `Microsoft.Data.Sqlite.dll` and `SQLitePCLRaw` dependencies. The build now checks ZIP structure.
+4. Run **Publish Composer repository manifest**. It publishes a new release **v1.2.3**, not an overwrite of v1.2.2.
+5. In Jellyfin, update the plugin from Catalog, restart Runtipi Jellyfin, then confirm `api.getJSON(api.getUrl("ComposerSharedMetadata/health"))` reports `pluginVersion: "1.2.3"`.
+6. Verify `api.getJSON(api.getUrl("ComposerSharedMetadata/records"))` loads the saved 8 records. Only then inspect the composer portraits. No browser update required.
 
-1. Copy **only** `tests/test_logging.py` into the repository root's `tests/` folder, replacing the old file. Keep your current `packaging/package_release.py` v1.0.3 and all other build/publisher fixes.
-2. Commit and push the updated test to the `main` branch of `designworld-ca/Composer_Metadata`.
-3. Re-run **Build native Composer plugin**. On success, run **Publish Composer repository manifest** using the new successful build.
-
-No plugin reinstall, JavaScript Injector change, or SQLite schema migration is needed to repair CI.
-
-## Verification (read-only except temporary test files)
+## Additional diagnostics (read-only)
 
 ```bash
-python3 -m unittest discover -s tests -p test_logging.py -v
+# On the Runtipi host, find the installed plugin binaries. No files modified.
+sudo find /home/roo/runtipi/app-data/migrated/jellyfin/data/config/data/plugins \
+  -maxdepth 3 -type f \( -name 'Microsoft.Data.Sqlite.dll' -o -name 'SQLitePCLRaw*.dll' -o -name 'meta.json' \) -print
 ```
 
-Expected: **5 tests pass**, including checking the real packaged `meta.json` version against `<Version>` in the current `.csproj`, using fake binaries in an automatically deleted temporary directory. **Do not install any ZIP created by the tests:** these contain placeholders, not a working plugin.
+You can also download the actual v1.2.3 installation ZIP from GitHub Releases and run:
 
-The test deliberately retains the logging/privacy checks and explicitly verifies that the stored SQLite schema and `schemaVersion = 1` are unchanged.
+```bash
+python3 tools/verify_composer_install_zip.py \
+  --archive jellyfin-composer-shared-metadata-1.2.3-linux-x64-install.zip \
+  --expected-version 1.2.3
+```
 
-## Scope and limitations
-
-- Only `tests/test_logging.py` is replaced; plugin binaries, Jellyfin data, and the GitHub release are not modified.
-- This fixes the displayed logging-test failure, but a full live build might reveal another issue.
-- GitHub's public repository was not readable from the current tool session. The repair is based on the exact error and packaging code provided, and was tested against the latest supplied source packages.
+**Known validation limitation:** This workspace cannot run .NET SDK compilation or inspect your live Jellyfin server. Static ZIP checks and simulated packager tests cannot prove the server will load the plugin. If CSM510 persists, inspect the installed plugin directory and its managed DLLs. Do not touch SQLite files.
