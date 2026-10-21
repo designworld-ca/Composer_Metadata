@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Jellyfin Composer Shared Metadata packaging helper v1.0.3.
+"""Jellyfin Composer Shared Metadata packaging helper v1.0.4.
 
 PURPOSE: Make a manual-installable ZIP after a real, successful .NET 10 build.
 SAFETY: Default preview, explicit --apply required; never touches Jellyfin files.
@@ -21,7 +21,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from select_composer_build import expected_build
 
-SCRIPT_VERSION = '1.0.3'  # not a plugin version
+SCRIPT_VERSION = '1.0.4'  # not a plugin version
 PLUGIN_ID = '4c65902b-e89d-4549-a313-2a204c622e77'
 MAIN_DLL = 'Jellyfin.Plugin.ComposerSharedMetadata.dll'
 
@@ -39,9 +39,26 @@ def execute():
     p = pathlib.Path(args.publish_dir)
     if not p.is_dir():
         raise SystemExit('MISSING PUBLISH DIRECTORY: run dotnet publish first.')
-    files = [p / MAIN_DLL, p / 'Microsoft.Data.Sqlite.dll']
+    # Jellyfin loads listed managed assemblies from meta.json. Merely copying
+    # Microsoft.Data.Sqlite.dll alongside the plugin is not sufficient.
+    required_dlls = (
+        MAIN_DLL,
+        'Microsoft.Data.Sqlite.dll',
+        'SQLitePCLRaw.core.dll',
+        'SQLitePCLRaw.provider.e_sqlite3.dll',
+        'SQLitePCLRaw.batteries_v2.dll',
+    )
     sqlite_pcl = sorted(p.glob('SQLitePCLRaw*.dll'))
-    files.extend(sqlite_pcl)
+    managed_files = [p / MAIN_DLL, p / 'Microsoft.Data.Sqlite.dll', *sqlite_pcl]
+    managed_names = [f.name for f in managed_files]
+    missing = [name for name in required_dlls if name not in managed_names]
+    if missing:
+        raise SystemExit('Missing required managed SQLite assembly in published output: ' + ', '.join(missing))
+    invalid_managed = [f.name for f in managed_files if not f.is_file() or f.stat().st_size == 0]
+    if len(managed_names) != len(set(managed_names)) or invalid_managed:
+        raise SystemExit('Missing, empty, or duplicated managed SQLite assemblies in publish output: ' +
+                         ', '.join(invalid_managed))
+    files = list(managed_files)
     native = list(p.rglob('libe_sqlite3.so'))
     # Native deps may be under RID folder in publish or copied directly at root.
     specific = [f for f in native if (args.rid in f.parts or f.parent == p)]
@@ -49,8 +66,8 @@ def execute():
     if len(native) != 1:
         raise SystemExit('Expected one native SQLite libe_sqlite3.so for ' + args.rid + ', found ' + str(native))
     files.append(native[0])
-    if len(sqlite_pcl) < 2 or any(not f.is_file() for f in files):
-        raise SystemExit('Plugin DLL, Microsoft.Data.Sqlite, or SQLitePCLRaw DLLs missing from published output.')
+    if any(not f.is_file() or f.stat().st_size == 0 for f in files):
+        raise SystemExit('Required managed or native SQLite dependency is missing or empty.')
     dep_file = p / 'Jellyfin.Plugin.ComposerSharedMetadata.deps.json'
     if dep_file.exists(): files.append(dep_file)
     names = [(f, f.name) for f in files]
@@ -59,7 +76,8 @@ def execute():
         'version': package_version + '.0', 'targetAbi': '12.2.0.0',
         'category': 'Metadata', 'description': 'Shared composer metadata SQLite overlays, no Jellyfin DB edits.',
         'status': 'Active', 'autoUpdate': True,
-        'assemblies': [MAIN_DLL], 'owner': 'Composer Browser Project'
+        # Whitelist every managed dependency; exclude native ELF .so files.
+        'assemblies': managed_names, 'owner': 'Composer Browser Project'
     }
     out = pathlib.Path(args.output_dir) / ('jellyfin-composer-shared-metadata-' + package_version + '-' + args.rid + '-install.zip')
     print('PREVIEW: target', out)
