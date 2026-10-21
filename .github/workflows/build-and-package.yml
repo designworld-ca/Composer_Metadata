@@ -1,4 +1,4 @@
-# Composer plugin build v1.0.3 — version-consistent Jellyfin 12.2 Linux x64 archives.
+# Composer plugin build v1.0.4 — version-consistent Jellyfin 12.2 Linux x64 archives.
 # Runs on explicit workflow_dispatch, code push, or v* tag. No Jellyfin DB access.
 # Only build runner downloads .NET SDK and NuGet; no SDK needed on Jellyfin server.
 name: Build native Composer plugin
@@ -23,6 +23,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/select_composer_build.py --project plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --github-output "$GITHUB_OUTPUT" --apply
+      - name: Verify current source and documentation
+        run: python3 tests/preflight_source.py --version "${{ steps.version.outputs.EXPECTED_VERSION }}"
       - name: Restore and build against Jellyfin 12.2
         run: dotnet build plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --configuration Release
       - name: Test SQLite store using separate temp DB
@@ -36,6 +38,10 @@ jobs:
       - name: Publish Linux x64 plugin libraries
         run: |
           dotnet publish plugin/Jellyfin.Plugin.ComposerSharedMetadata.csproj --configuration Release -r linux-x64 --self-contained false --output out/linux-x64
+      - name: Verify actual published SQLite and plugin assembly versions
+        run: >-
+          dotnet run --project tests/VerifyPublishedAssemblies.csproj
+          --configuration Release -- out/linux-x64 "${{ steps.version.outputs.EXPECTED_VERSION }}"
       - name: Assemble platform-specific install ZIPs
         run: |
           python3 packaging/package_release.py --publish-dir out/linux-x64 --rid linux-x64 --expected-version "${{ steps.version.outputs.EXPECTED_VERSION }}" --apply
@@ -50,6 +56,7 @@ jobs:
           ZIP="dist/jellyfin-composer-shared-metadata-${EXPECTED_VERSION}-linux-x64-install.zip"
           test -f "$ZIP" || { echo "Missing expected archive $ZIP" >&2; exit 1; }
           python3 tools/prepare_x64_release.py --archive "$ZIP" --release-tag "$EXPECTED_TAG"
+          python3 tools/verify_composer_install_zip.py --archive "$ZIP" --expected-version "$EXPECTED_VERSION" --strict
       - name: Upload built install ZIPs
         uses: actions/upload-artifact@v6
         with:
