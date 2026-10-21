@@ -1,5 +1,5 @@
 /*
- * Jellyfin Composer Shared Metadata API Controller v1.2.2.
+ * Jellyfin Composer Shared Metadata API Controller v1.2.3.
  * Jellyfin 12.2; authenticated reads, elevated admin writes; same-origin API.
  * Endpoints preserve the v3.4 browser contract, so migration of v3.3 backups works.
  * No direct Jellyfin database or native People writes; one composer per explicit PUT.
@@ -37,7 +37,7 @@ public sealed class ComposerMetadataController : ControllerBase
     public IActionResult Health()
     {
         _logger.LogDebug("CSM101 Health request served");
-        return Ok(new { status = "ready", storage = "plugin-sqlite", pluginVersion = "1.2.2", schemaVersion = 1 });
+        return Ok(new { status = "ready", storage = "plugin-sqlite", pluginVersion = "1.2.3", schemaVersion = 1 });
     }
 
     /// <summary>Returns all saved composer metadata to an authenticated user.</summary>

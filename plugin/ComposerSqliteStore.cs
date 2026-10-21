@@ -1,5 +1,5 @@
 /*
- * ComposerSqliteStore.cs — v1.2.2 (Jellyfin 12.2/.NET 10)
+ * ComposerSqliteStore.cs — v1.2.3 (Jellyfin 12.2/.NET 10)
  * Separate SQLite data at <PluginConfigurationsPath>/ComposerSharedMetadata/composer_metadata.sqlite3.
  * PREVIEW: ReadAll/ReadImage do not initialize/mutate a database. Health is read-only.
  * APPLY: SaveAsync only after authenticated administrator PUT, exact composer key + expectedRevision.

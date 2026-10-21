@@ -1,5 +1,5 @@
 /*
- * Jellyfin Composer Shared Metadata Plugin v1.2.2
+ * Jellyfin Composer Shared Metadata Plugin v1.2.3
  * Native Jellyfin 12.2/net10 entry point. Separate SQLite metadata overlays only.
  * Reads do not change disk. Writes occur only via explicit, administrator-authorized PUT.
  * Does not open or mutate jellyfin.db, tags, track credits or native People records.
@@ -23,7 +23,7 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         Instance = this;
         logger.LogInformation(
             "CSM100 Composer Shared Metadata plugin {Version} loaded; independent SQLite storage, schema {SchemaVersion}",
-            "1.2.2", 1);
+            "1.2.3", 1);
     }
 
     /// <summary>Currently loaded plugin instance.</summary>

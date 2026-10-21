@@ -1,5 +1,5 @@
 /*
- * Jellyfin Composer Shared Metadata configuration v1.2.2.
+ * Jellyfin Composer Shared Metadata configuration v1.2.3.
  * No passwords, API keys, plugin-side database location override or credentials.
  * Only the plugin-owned SQLite file under PluginConfigurationsPath is modified.
  */

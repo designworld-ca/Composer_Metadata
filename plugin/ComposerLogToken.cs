@@ -1,5 +1,5 @@
 /*
- * ComposerLogToken.cs — v1.2.1
+ * ComposerLogToken.cs — v1.2.3
  * Correlate SQLite write and conflict log events without logging a Person's
  * name, raw composer key, biography, image bytes, or user credentials.
  * Deliberately not used for security decisions or database identity.
